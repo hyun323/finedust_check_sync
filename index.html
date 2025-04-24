@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>세종시 미세먼지 현황</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Arial', sans-serif;
+            transition: background-color 0.5s ease;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .chart-container {
+            margin-top: 20px;
+            position: relative;
+            height: 400px;
+        }
+        .weather-info {
+            text-align: center;
+            margin: 20px 0;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>세종시 미세먼지 현황</h1>
+        <div class="weather-info" id="weatherInfo"></div>
+        <div class="chart-container">
+            <canvas id="dustChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // API 키는 실제 사용 시 발급받아야 합니다
+        const API_KEY = 'pRvcuceiwsdG1bIqOi59QzdduSDsK36QYgBLLx6YBkdRYpTpUWT6HEsbnGr1KTd/pjBLQtwQah7cbcz4g0hbnw==';
+        const CITY = '세종';
+
+        async function fetchDustData() {
+            try {
+                const response = await fetch(`http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey=${API_KEY}&returnType=json&numOfRows=24&pageNo=1&sidoName=${CITY}&ver=1.0`);
+                const data = await response.json();
+                console.log('API 응답:', data);
+                
+                if (data.response && data.response.header) {
+                    const resultCode = data.response.header.resultCode;
+                    const resultMsg = data.response.header.resultMsg;
+                    
+                    if (resultCode !== '00') {
+                        document.getElementById('weatherInfo').textContent = 
+                            `API 오류: ${resultMsg}`;
+                        return null;
+                    }
+                    
+                    // 실제 데이터 추출
+                    const items = data.response.body.items;
+                    if (!items || items.length === 0) {
+                        document.getElementById('weatherInfo').textContent = 
+                            '데이터가 없습니다.';
+                        return null;
+                    }
+                    
+                    return items;
+                }
+                
+                return null;
+            } catch (error) {
+                console.error('데이터를 가져오는 중 오류가 발생했습니다:', error);
+                document.getElementById('weatherInfo').textContent = 
+                    '데이터를 가져오는 중 오류가 발생했습니다.';
+                return null;
+            }
+        }
+
+        function updateBackground(weatherCondition) {
+            const body = document.body;
+            let weatherColor = '#F5F5F5'; // 기본색
+            
+            switch(weatherCondition) {
+                case '맑음':
+                    weatherColor = '#87CEEB'; // 하늘색
+                    break;
+                case '구름많음':
+                case '흐림':
+                    weatherColor = '#B0C4DE'; // 연한 회색
+                    break;
+                case '비':
+                case '소나기':
+                    weatherColor = '#708090'; // 회색
+                    break;
+                case '눈':
+                    weatherColor = '#E6E6FA'; // 연한 보라색
+                    break;
+                case '황사':
+                    weatherColor = '#D2B48C'; // 모래색
+                    break;
+                case '안개':
+                    weatherColor = '#D3D3D3'; // 연한 회색
+                    break;
+            }
+            
+            body.style.backgroundColor = weatherColor;
+        }
+
+        function getWeatherEmoji(weatherCondition) {
+            switch(weatherCondition) {
+                case '맑음':
+                    return '☀️';
+                case '구름많음':
+                    return '⛅';
+                case '흐림':
+                    return '☁️';
+                case '비':
+                case '소나기':
+                    return '🌧️';
+                case '눈':
+                    return '❄️';
+                case '황사':
+                    return '🌪️';
+                case '안개':
+                    return '🌫️';
+                default:
+                    return '🌤️';
+            }
+        }
+
+        function getDustStatus(value, type) {
+            if (type === 'PM10') {
+                if (value <= 30) return '좋음';
+                if (value <= 80) return '보통';
+                if (value <= 150) return '나쁨';
+                return '매우 나쁨';
+            } else { // PM2.5
+                if (value <= 15) return '좋음';
+                if (value <= 35) return '보통';
+                if (value <= 75) return '나쁨';
+                return '매우 나쁨';
+            }
+        }
+
+        function getStatusEmoji(status) {
+            switch(status) {
+                case '좋음':
+                    return '😊';
+                case '보통':
+                    return '😐';
+                case '나쁨':
+                    return '😷';
+                case '매우 나쁨':
+                    return '🤢';
+                default:
+                    return '';
+            }
+        }
+
+        function createChart(data) {
+            const ctx = document.getElementById('dustChart').getContext('2d');
+            
+            // 데이터 정렬 (시간순)
+            data.sort((a, b) => new Date(a.dataTime) - new Date(b.dataTime));
+            
+            const labels = data.map(item => item.dataTime.split(' ')[1]); // 시간만 표시
+            const pm10 = data.map(item => parseInt(item.pm10Value));
+            const pm25 = data.map(item => parseInt(item.pm25Value));
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'PM10 (㎍/㎥)',
+                            data: pm10,
+                            borderColor: 'rgb(255, 99, 132)',
+                            backgroundColor: 'rgba(255, 99, 132, 0.1)',
+                            tension: 0.1,
+                            fill: true
+                        },
+                        {
+                            label: 'PM2.5 (㎍/㎥)',
+                            data: pm25,
+                            borderColor: 'rgb(54, 162, 235)',
+                            backgroundColor: 'rgba(54, 162, 235, 0.1)',
+                            tension: 0.1,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '농도 (㎍/㎥)'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: '시간'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: '세종시 미세먼지 농도 변화'
+                        }
+                    }
+                }
+            });
+        }
+
+        async function init() {
+            const data = await fetchDustData();
+            if (data) {
+                createChart(data);
+                const latestData = data[data.length - 1];
+                const weatherEmoji = getWeatherEmoji(latestData.weatherCondition || '맑음');
+                
+                const pm10Value = parseInt(latestData.pm10Value) || 0;
+                const pm25Value = parseInt(latestData.pm25Value) || 0;
+                
+                const pm10Status = getDustStatus(pm10Value, 'PM10');
+                const pm25Status = getDustStatus(pm25Value, 'PM2.5');
+                
+                document.getElementById('weatherInfo').innerHTML = 
+                    `<div>최근 측정 시간: ${latestData.dataTime}</div>
+                     <div>현재 날씨: ${weatherEmoji} ${latestData.weatherCondition || '맑음'}</div>
+                     <div>PM10(미세먼지): ${pm10Value}㎍/㎥ ${getStatusEmoji(pm10Status)} ${pm10Status}</div>
+                     <div>PM2.5(초미세먼지): ${pm25Value}㎍/㎥ ${getStatusEmoji(pm25Status)} ${pm25Status}</div>`;
+                
+                updateBackground(latestData.weatherCondition || '맑음');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
