@@ -52,7 +52,16 @@
 
         async function fetchDustData() {
             try {
-                const response = await fetch(`http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey=${API_KEY}&returnType=json&numOfRows=24&pageNo=1&sidoName=${CITY}&ver=1.0`);
+                // 더 안정적인 CORS 프록시 사용
+                const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                const apiUrl = encodeURIComponent(`http://apis.data.go.kr/B552584/ArpltnInforInqireSvc/getCtprvnRltmMesureDnsty?serviceKey=${API_KEY}&returnType=json&numOfRows=24&pageNo=1&sidoName=${CITY}&ver=1.0`);
+                
+                const response = await fetch(proxyUrl + apiUrl);
+                
+                if (!response.ok) {
+                    throw new Error('API 호출 실패');
+                }
+                
                 const data = await response.json();
                 console.log('API 응답:', data);
                 
@@ -66,7 +75,6 @@
                         return null;
                     }
                     
-                    // 실제 데이터 추출
                     const items = data.response.body.items;
                     if (!items || items.length === 0) {
                         document.getElementById('weatherInfo').textContent = 
@@ -74,6 +82,8 @@
                         return null;
                     }
                     
+                    // 데이터 정렬 (시간순)
+                    items.sort((a, b) => new Date(b.dataTime) - new Date(a.dataTime));
                     return items;
                 }
                 
@@ -228,11 +238,16 @@
             });
         }
 
+        function formatDateTime(dateTimeStr) {
+            const date = new Date(dateTimeStr);
+            return `${date.getMonth() + 1}월 ${date.getDate()}일 ${date.getHours()}시`;
+        }
+
         async function init() {
             const data = await fetchDustData();
             if (data) {
                 createChart(data);
-                const latestData = data[data.length - 1];
+                const latestData = data[0]; // 정렬된 데이터의 첫 번째 항목이 최신 데이터
                 const weatherEmoji = getWeatherEmoji(latestData.weatherCondition || '맑음');
                 
                 const pm10Value = parseInt(latestData.pm10Value) || 0;
@@ -242,14 +257,20 @@
                 const pm25Status = getDustStatus(pm25Value, 'PM2.5');
                 
                 document.getElementById('weatherInfo').innerHTML = 
-                    `<div>최근 측정 시간: ${latestData.dataTime}</div>
+                    `<div>최근 측정 시간: ${formatDateTime(latestData.dataTime)}</div>
                      <div>현재 날씨: ${weatherEmoji} ${latestData.weatherCondition || '맑음'}</div>
                      <div>PM10(미세먼지): ${pm10Value}㎍/㎥ ${getStatusEmoji(pm10Status)} ${pm10Status}</div>
-                     <div>PM2.5(초미세먼지): ${pm25Value}㎍/㎥ ${getStatusEmoji(pm25Status)} ${pm25Status}</div>`;
+                     <div>PM2.5(초미세먼지): ${pm25Value}㎍/㎥ ${getStatusEmoji(pm25Status)} ${pm25Status}</div>
+                     <div style="font-size: 0.8em; color: #666; margin-top: 10px;">
+                        ※ 데이터는 1시간 단위로 업데이트됩니다.
+                     </div>`;
                 
                 updateBackground(latestData.weatherCondition || '맑음');
             }
         }
+
+        // 1시간마다 데이터 갱신
+        setInterval(init, 3600000);
 
         init();
     </script>
